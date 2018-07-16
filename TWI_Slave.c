@@ -80,7 +80,7 @@ void slaveinit(void)
     TWI_DDR |= (1<<OSZIPIN);        // Ausgang
     TWI_PORT &= ~(1<<OSZIPIN);       // HI
     
-    TWI_DDR &= ~(1<<RASPIPIN);        // Eingang: Verbunden mit SDA, misst LO-Zeit, um Stillstand zu erkennen
+    TWI_DDR &= ~(1<<RASPIPIN);        // Eingang: Verbunden mit Raspi, misst LO-Zeit, um Stillstand zu erkennen
     TWI_PORT |= (1<<RASPIPIN);        // HI
     
    TWI_DDR &= ~(1<<PB2);
