@@ -42,13 +42,26 @@
 #define RESETCOUNT            0x28   // 10s: Fehlercounter: Zeit bis Reset ausgeloest wird
 #define RESETFAKTOR           1       // Vielfaches von RESETCOUNT
 
+#define REBOOTCOUNT           0x28
+#define REBOOTFAKTOR          1
 
 #define RESETDELAY            0x02   // Waitcounter: Blockiert wiedereinschalten
 #define RASPIRESETFAKTOR       12
-#define WAIT                  0
-#define CHECK                 1 // in ISR gesetzt, resetcount soll erhoeht werden
 
-#define REBOOTWAIT             2 // gesetzt, wenn SDA zulange LO ist
+#define shutdownfaktor        5
+#define killfaktor            5
+#define relaxfaktor           3
+#define rebootfaktor          10
+
+#define WAIT                  0
+#define SHUTDOWNWAIT          1
+#define KILLWAIT              2
+#define RELAXWAIT             3
+
+#define REBOOTWAIT             4 // gesetzt, wenn SDA zulange LO ist
+
+#define CHECK                 7 // in ISR gesetzt, resetcount soll erhoeht werden
+
 
 #define Raspi_LO_MAX            0x8000
 #define Raspi_HI_MAX            0xFFFF
@@ -232,29 +245,42 @@ void main (void)
          if ((resetcount > RESETFAKTOR * RESETCOUNT) & (!(statusflag & (1<<WAIT))) & (!(statusflag & (1<<REBOOTWAIT))))     // Zeit erreicht
          {
             //TWI_PORT ^=(1<<OSZIPIN);
-            TWI_PORT &= ~(1<<RELAISPIN);    // RELAISPIN LO, Reset fuer raspi
+            // 3 Impuldse zum Abschalten
+            uint8_t i = 0;
+            for (i=0;i<3;i++)
+            {
+               TWI_PORT &= ~(1<<RELAISPIN);    // RELAISPIN LO, Reset fuer raspi
+               _delay_ms(100);
+               TWI_PORT |= (1<<RELAISPIN); //Ausgang wieder HI
+               _delay_ms(100);
+            }
+           
             statusflag |= (1<<WAIT);      // WAIT ist gesetzt, Ausgang wird von Raspi_HI nicht sofort wieder zurueckgesetzt
             delaycount = 0;
+         
          }
            
          if (statusflag & (1<<WAIT))
          {
-            delaycount++; // Counter fuer Dauer Relais_on
+            delaycount++; // Counter fuer Warten bis Raspi-shutdown, anschliessend ausschalten: Relasipin low fuer 5 sec 
             //TWI_PORT ^=(1<<OSZIPIN);
-            if (delaycount > RESETDELAY) //Raspi ist resettet
+            if (delaycount > RESETDELAY) //Raspi ist down
             {
                //TWI_PORT |=(1<<OSZIPIN);
                statusflag &= ~0x1B ; // alle reset-Bits (3,4)
-               TWI_PORT |= (1<<RELAISPIN); //Ausgang wieder HI
+           //    TWI_PORT &= ~(1<<RELAISPIN); //Ausgang wieder LO
                statusflag &= ~(1<<WAIT);// WAIT zurueckgesetzt, Raspi_HI ist wieder wirksam
-               //statusflag |= (1<<REBOOTWAIT); //  Warten auf reboot
+               statusflag |= (1<<REBOOTWAIT); //  Warten auf Ausschalten
                resetcount =0;              
             }            
          }
          else if (statusflag & (1<<REBOOTWAIT))
          {
             rebootdelaycount++;
-            
+            if (delaycount > RESETDELAY) //Raspi ist down
+            {
+               statusflag &= ~(1<<REBOOTWAIT);
+            }
          }
          else
          {
