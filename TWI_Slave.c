@@ -39,10 +39,9 @@
 #define RELAISPIN             4        // Schaltet Relais
 
 
-#define RESETCOUNT            0x28   // 10s: Fehlercounter: Zeit bis Reset ausgeloest wird
-#define RESETFAKTOR           1       // Vielfaches von RESETCOUNT
+#define DELTA            0x28   // 10s: Fehlercounter: Zeit bis Reset ausgeloest wird
+#define RESETFAKTOR           1       // Vielfaches von DELTA
 
-#define REBOOTCOUNT           0x28
 #define REBOOTFAKTOR          1
 
 #define RESETDELAY            0x02   // Waitcounter: Blockiert wiedereinschalten
@@ -242,7 +241,7 @@ void main (void)
          statusflag &= ~(1<<CHECK);
          // resetcount wird bei Aenderungen am RaspiPIN  in ISR von INT0 zurueckgesetzt. (Normalbetrieb)
          //resetcount++;
-         if ((resetcount > RESETFAKTOR * RESETCOUNT) & (!(statusflag & (1<<WAIT))) & (!(statusflag & (1<<REBOOTWAIT))))     // Zeit erreicht
+         if ((resetcount > RESETFAKTOR * DELTA) & (!(statusflag & (1<<WAIT))) & (!(statusflag & (1<<REBOOTWAIT))))     // Zeit erreicht, kein wait-status
          {
             //TWI_PORT ^=(1<<OSZIPIN);
             // 3 Impuldse zum Abschalten
@@ -271,21 +270,25 @@ void main (void)
            //    TWI_PORT &= ~(1<<RELAISPIN); //Ausgang wieder LO
                statusflag &= ~(1<<WAIT);// WAIT zurueckgesetzt, Raspi_HI ist wieder wirksam
                statusflag |= (1<<REBOOTWAIT); //  Warten auf Ausschalten
-               resetcount =0;              
+               resetcount =0; 
+               rebootdelaycount = 0;
             }            
          }
-         else if (statusflag & (1<<REBOOTWAIT))
+         else if (statusflag & (1<<REBOOTWAIT)) // reboot-procedure beginnen
          {
-            rebootdelaycount++;
+            rebootdelaycount++; // fortlaufend incrementieren, bestimmt ablauf
+            
+            
             if (rebootdelaycount > RESETDELAY) //Raspi ist down
             {
                statusflag &= ~(1<<REBOOTWAIT);
             }
-            
+         
+         
          }
          else
          {
-            // resetcounter inkrementieren
+            // resetcounter inkrementieren, Normalbetrieb
             resetcount++;
             
          }
