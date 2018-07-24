@@ -277,10 +277,11 @@ void main (void)
          else if (statusflag & (1<<REBOOTWAIT))
          {
             rebootdelaycount++;
-            if (delaycount > RESETDELAY) //Raspi ist down
+            if (rebootdelaycount > RESETDELAY) //Raspi ist down
             {
                statusflag &= ~(1<<REBOOTWAIT);
             }
+            
          }
          else
          {
