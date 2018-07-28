@@ -30,8 +30,8 @@
 
 #define LOOPLEDPIN            0        // Blink-LED
 
-#define RASPIPIN              1        // Eingang von SDA/I2C
-#define WEBSERVERPIN				2			// Eingang vom WebServer
+#define RASPISUPPLYPIN        1     // Eingang vom Raspi: Betriebsspannung
+#define RASPITAKTPIN			   2		// PCINT2
 
 #define OSZIPIN               3
 #define REPORTPIN             3       // Wie OSZI. Meldet Reset an Webserver, active LO
@@ -39,26 +39,26 @@
 #define RELAISPIN             4        // Schaltet Relais
 
 
-#define DELTA            0x28   // 10s: Fehlercounter: Zeit bis Reset ausgeloest wird
+#define DELTA                 0x28   // 10s: Fehlercounter: Zeit bis Reset ausgeloest wird
 #define RESETFAKTOR           1       // Vielfaches von DELTA
 
-#define REBOOTFAKTOR          1
+#define SHUTDOWNFAKTOR        3     //faktor fuer shutdown des Raspi
+#define KILLFAKTOR            1     //faktor fuer Zeit bis zum Ausschalten
 
-#define RESETDELAY            0x02   // Waitcounter: Blockiert wiedereinschalten
-#define RASPIRESETFAKTOR       12
 
-#define shutdownfaktor        5
-#define killfaktor            5
-#define relaxfaktor           3
-#define rebootfaktor          10
+#define REBOOTFAKTOR          10
+
+#define RESETDELAY            2   // Waitcounter: Blockiert wiedereinschalten
+#define RESTARTFAKTOR         1  // faktor fuer Raspi-Restart
+
 
 #define WAIT                  0
 #define SHUTDOWNWAIT          1
 #define KILLWAIT              2
 #define RELAXWAIT             3
-
-#define REBOOTWAIT             4 // gesetzt, wenn SDA zulange LO ist
-
+#define RESTARTWAIT           4 // gesetzt, wenn Raspi neu startet. 
+#define REBOOTWAIT            5 // gesetzt, wenn SDA zulange LO ist
+#define FIRSTRUN              6 // Warten auf Raspi
 #define CHECK                 7 // in ISR gesetzt, resetcount soll erhoeht werden
 
 
@@ -77,9 +77,9 @@ volatile uint16_t	rebootdelaycount=0; // Zaehler fuer Zeit, die der Raspi fuer R
 
 volatile uint8_t statusflag=0;
 
-volatile uint16_t	overflowcount=0;
+volatile uint16_t	restartcount=0; // counter fuer Restart-Zeit
 
-
+volatile uint16_t   firstruncount=0; // warten auf Raspi bei plugin
 
 void slaveinit(void)
 {
@@ -90,11 +90,14 @@ void slaveinit(void)
     TWI_PORT |= (1<<RELAISPIN);     // HI	
     
     TWI_DDR |= (1<<OSZIPIN);        // Ausgang
-    TWI_PORT &= ~(1<<OSZIPIN);       // HI
+    TWI_PORT |= (1<<OSZIPIN);       // HI
     
-    TWI_DDR &= ~(1<<RASPIPIN);        // Eingang: Verbunden mit Raspi, misst LO-Zeit, um Stillstand zu erkennen
-    TWI_PORT |= (1<<RASPIPIN);        // HI
-    
+    TWI_DDR &= ~(1<<RASPITAKTPIN);        // Eingang: Verbunden mit Raspi, misst LO-Zeit, um Stillstand zu erkennen
+    TWI_PORT &= ~(1<<RASPITAKTPIN);        // HI
+
+   TWI_DDR &= ~(1<<RASPISUPPLYPIN);        // Eingang: Verbunden mit Raspi~-Betriebspannung: blockiert resetter im FIRSTrun, wenn R noch OFF
+   TWI_PORT &= ~(1<<RASPISUPPLYPIN);        // LO
+
    TWI_DDR &= ~(1<<PB2);
 
 //   TWI_DDR &= ~(1<<WEBSERVERPIN);        // Eingang: Verbunden mit Webserver, empfŠngt Signal zum reset
@@ -147,6 +150,7 @@ ISR(TIM0_OVF_vect) // Aenderung an SDA
 ISR(PCINT0_vect) // Potential-Aenderung 
 {
    //TWI_PORT ^=(1<<OSZIPIN);
+   statusflag &= ~(1<<FIRSTRUN); // Flag resetten, Raspi list gestartet
    if ((!(statusflag & (1<<WAIT))))// WAIT verhindert, dass Relais von Raspi_HI nicht sofort wieder zurueckgesetzt wird
    {
       // counter zuruecksetzen, alles OK
@@ -213,6 +217,8 @@ void main (void)
    PCMSK |= 1<<PCINT2;
    timer_init();
    sei();
+   
+   statusflag |= (1<<FIRSTRUN);
 #pragma mark while
 	while (1)
    {
@@ -228,19 +234,30 @@ void main (void)
          loopcount1++;
          if (loopcount1 >0x4F)
          {
-            //TWI_PORT ^=(1<<LOOPLEDPIN);
             loopcount1=0;
-            //           TWI_PORT ^= (1<<RELAISPIN);            
          }         
       }
       
       
       if (statusflag & (1<<CHECK))// Timer gibt Takt der Anfrage an
-      {         
+      {    
+         if (statusflag & (1<<FIRSTRUN)) 
+         {
+            // firstrun: wenn Raspi noch off: keine Aktionen
+            if (TWI_PIN & (1<<RASPISUPPLYPIN)) // Raspi ist ON
+            {               
+               
+            }
+            else // noch warten mit Aktionen
+            {
+               resetcount=0; // Kein Reset 
+            }
+         }
+         
          //TWI_PORT ^=(1<<OSZIPIN);
          statusflag &= ~(1<<CHECK);
          // resetcount wird bei Aenderungen am RaspiPIN  in ISR von INT0 zurueckgesetzt. (Normalbetrieb)
-         //resetcount++;
+
          if ((resetcount > RESETFAKTOR * DELTA) & (!(statusflag & (1<<WAIT))) & (!(statusflag & (1<<REBOOTWAIT))))     // Zeit erreicht, kein wait-status
          {
             //TWI_PORT ^=(1<<OSZIPIN);
@@ -277,14 +294,37 @@ void main (void)
          else if (statusflag & (1<<REBOOTWAIT)) // reboot-procedure beginnen
          {
             rebootdelaycount++; // fortlaufend incrementieren, bestimmt ablauf
-            
-            
-            if (rebootdelaycount > RESETDELAY) //Raspi ist down
+            if (rebootdelaycount == DELTA * SHUTDOWNFAKTOR) // Raspi ist down
             {
-               statusflag &= ~(1<<REBOOTWAIT);
+               TWI_PORT &= ~(1<<RELAISPIN); // Ausschalten einleiten
             }
-         
-         
+            
+            if (rebootdelaycount == DELTA * (SHUTDOWNFAKTOR + KILLFAKTOR)) // Ausgeschaltet
+            {
+               TWI_PORT |= (1<<RELAISPIN); //Ausgang wieder HI
+               _delay_ms(1000); // kurz warten
+               TWI_PORT &= ~(1<<RELAISPIN);    // RELAISPIN LO, Restart fuer raspi
+               _delay_ms(100);
+               TWI_PORT |= (1<<RELAISPIN); //Ausgang wieder HI
+               statusflag |= (1<<RESTARTWAIT);
+               restartcount=0; // counter fuer Restart-Zeit
+               TWI_PORT &= ~(1<<OSZIPIN);
+            }
+            
+            if (statusflag & (1<<RESTARTWAIT))
+            {
+               restartcount++;
+               if (restartcount > (DELTA*RESTARTFAKTOR))
+               {
+                  TWI_PORT |=(1<<OSZIPIN);
+                  statusflag &= ~(1<<RESTARTWAIT);
+                  statusflag &= ~(1<<REBOOTWAIT); // Vorgang beendet
+                  
+                  statusflag |= (1<<FIRSTRUN);
+               }
+               
+            }
+            
          }
          else
          {
