@@ -40,7 +40,7 @@
 
 
 #define DELTA                 0x28   // 10s: Fehlercounter: Zeit bis Reset ausgeloest wird
-#define RESETFAKTOR           1       // Vielfaches von DELTA
+#define RESETFAKTOR           3       // Vielfaches von DELTA
 
 #define SHUTDOWNFAKTOR        3     //faktor fuer shutdown des Raspi
 #define KILLFAKTOR            1     //faktor fuer Zeit bis zum Ausschalten
@@ -282,9 +282,9 @@ void main (void)
             //TWI_PORT ^=(1<<OSZIPIN);
             if (delaycount > RESETDELAY) //Raspi ist down
             {
-               //TWI_PORT |=(1<<OSZIPIN);
+               // TWI_PORT |=(1<<OSZIPIN);
                statusflag &= ~0x1B ; // alle reset-Bits (3,4)
-           //    TWI_PORT &= ~(1<<RELAISPIN); //Ausgang wieder LO
+               // TWI_PORT &= ~(1<<RELAISPIN); //Ausgang wieder LO
                statusflag &= ~(1<<WAIT);// WAIT zurueckgesetzt, Raspi_HI ist wieder wirksam
                statusflag |= (1<<REBOOTWAIT); //  Warten auf Ausschalten
                resetcount =0; 
@@ -319,7 +319,6 @@ void main (void)
                   TWI_PORT |=(1<<OSZIPIN);
                   statusflag &= ~(1<<RESTARTWAIT);
                   statusflag &= ~(1<<REBOOTWAIT); // Vorgang beendet
-                  
                   statusflag |= (1<<FIRSTRUN);
                }
                
